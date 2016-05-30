@@ -1,0 +1,123 @@
+---
+title: 'Practical Machine Learning: Prediction Assigment Report'
+author: "Walter Oliver"
+date: "May 29, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+The goal of this project is to predict the matter in which a set of individuals did their dumbbell exercises. We used the data provided in a study available here <http://groupware.les.inf.puc-rio.br/har>. It consists of measurements taken from 6 participants while the performed their dumbbell exercises correctly and incorrectly in 5 different ways. The subjects were sensors in their belts, forearms, arms, and dumbbell. The data consists of a training set and a testing set. The report describes how I build the model and covers the following areas:
+
+* Exploring and Cleaning the Data
+* Using Cross Validation
+* Expected Out-of-Sample Error
+* Build the model. Why I made the choices I did
+* Produce the 20 predictions corresponding to testing data
+
+## Exploring and Cleaning the Data
+The data consists of 160 features, many of which have the following issues:
+
+* Have NAs and blank chars as their majority of their values
+* Have "#DIV/0!" among their values
+* Contain data mostly consisting of a single value
+* Consist of data intended for record keeping and with little relevance to the actual prediction process
+
+The following code produce a cleaner data set:
+
+```{r WLE, results='hide', message=FALSE, warning=FALSE}
+library(caret)
+
+# Read the two sets: training and testing and treat "NA", "#DIV/0!" and "" as NA values
+training = read.csv("C:/pml-training.csv", na.strings = c("NA", "#DIV/0!", ""))
+testing = read.csv("C:/pml-testing.csv", na.strings = c("NA", "#DIV/0!", ""))
+
+# Examining the data with the following statements show some of the problems mentioned above
+str(training, list.len = nrow(training))
+summary(training)
+
+# Start clean up by removing all the columns with a high number of NAs:
+training1 = training[ , colSums(is.na(training))/nrow(training) < 0.95]
+testing1 = testing[ , colSums(is.na(testing))/nrow(testing) < 0.95]
+
+# See the new_window column, it is a factor: "yes" and "no" where 98% is "no", I proceed to remove it:
+training1 = training1[ , -6]
+testing1 = testing1[ , -6]
+
+# The row numbers (x), user names, and timestamps appear to be data for record keeping and have little 
+# relation with the sensor data and time windows. I remove them:
+training1 = training1[ , -c(1:5)]
+testing1 = testing1[ , -c(1:5)]
+```
+
+After this clean up process is concluded we are left with 54 features, a good reduction from 160 in the original dataset.
+
+## Preparing the data for Estimating the Out-of-Sample Error
+Now, with the clean data, I need to set aside data to estimate the out-of-sample error. I proceed to create training and validation sets from the clean training data:
+```{r SplitData, results='hide'}
+set.seed(3433)
+inTrain = createDataPartition(training1$classe, p = 3/4)[[1]]
+training_trainSet = training1[ inTrain,]
+training_valSet = training1[-inTrain,]
+```
+More on this subject in the section below where I build the models
+
+## Using Cross Validation
+A very common method for Cross Validation is the k-fold method, it is also used in this class . I used it as part of building the model. The following code creates the CV control parameters using 5 fold to be used in the training of the model in the next section:
+```{r TrainControl, results='hide'}
+controlParam <- trainControl(method="cv", number=5)
+```
+More on this subject in the next section where I build the models
+
+## Building the Model and Estimating the Out-of-Sample Error
+My original plan was to:
+1. Build models using Random Forest ("rf"), boosted trees ("gbm"), and linear discriminant analysis ("lda")
+2. Evaluate each for accuracy and
+3. Decide if it was worth it to proceed to build a model that combined the three of them
+However, since I started with Random Forest, I was able to estimate its Out-of-Sample (OoS) Error and accuracy and realized that it was a solid model to proceed with the final predictions, ignoring the rest of the plan. Here is the code to build an intermediate model and estimate the OoS Error:
+```{r mod_rf, results='hide', message=FALSE}
+# train a Random Forest model using train from the caret package.
+# The data should be the smaller set training_trainSet so that we can 
+# later use training_valSet for estimating the OoS Error 
+mod_rf <- train(classe~ .,data=training_trainSet, method="rf", trControl=controlParam)
+```
+
+Now we can proceed to view the resulting model parameters and corresponding Confusion Matrix
+```{r ShowModel, echo=TRUE}
+mod_rf$finalModel
+```
+
+Nothing in the model would indicate that Random Forest is a bad choice: Number of Trees, Variables at each split, the our-of-bag error rate estimate and confusion matrix look reasonable. Now we can proceed to predict with the validation set and estimate the Out-of-Sample Error:
+```{r ValidationSet, echo=TRUE}
+pred_rf_valset <- predict(mod_rf, training_valSet)
+confusionMatrix(training_valSet$classe, pred_rf_valset)
+```
+
+Notice that the accuracy is 0.997, this will imply an Out-of-Sample Error estimate of 0.003. This last piece of data makes me believe that the choices thus far are producing good results and that there should not be a need to evaluate more models as originally planned
+
+## Building the final Model to Perform Predictions on testing1 data
+Now that I have evidence that Random Forest yields a potential useful model, I proceed to build a new model with the entire cleaned training data
+```{r FinalModel, results='hide'}
+# create new model with the entire training1 data
+# same k-fold paramenters
+controlParam <- trainControl(method="cv", number=5)
+mod_rf_full <- train(classe~ .,data=training1, method="rf", trControl=controlParam)
+```
+
+With this new model we can proceed to perform the predictions on the testing data
+```{r Predictions}
+# Predicting with the 20 observation in the testing data and the full model
+pred_rf_full <- predict(mod_rf_full, testing1)
+pred_rf_full
+```
+
+## Conclusion
+The resulting predictions turned out accurate, the choice of staying with Random Forest in this case was sufficient to achieve the desired results.
+
+## Reference
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: <http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz4A6dGNCwl>

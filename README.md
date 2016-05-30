@@ -1,2 +1,2 @@
 # MachineLearning
-Experiments with interesting data
+Walter's experiments with interesting data
